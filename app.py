@@ -27,18 +27,18 @@ def load_model():
     # Ottieni il token di accesso dalle variabili d'ambiente
     huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
     if huggingface_token is None:
-    raise ValueError("Token di autenticazione Hugging Face non trovato. Impostare la variabile d'ambiente 'HUGGINGFACE_TOKEN'.")
+        raise ValueError("Token di autenticazione Hugging Face non trovato. Impostare la variabile d'ambiente 'HUGGINGFACE_TOKEN'.")
 
     # Carica il tokenizer con il token di accesso
     tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B", token=huggingface_token)
 
     # Carica il modello con distribuzione automatica tra CPU/GPU e precisione ridotta
     model = AutoModelForCausalLM.from_pretrained(
-    "meta-llama/Llama-3.2-1B",
-    torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-    device_map="auto",  # Distribuzione automatica su CPU/GPU
-    token=huggingface_token  # Passa il token di autenticazione
-)
+        "meta-llama/Llama-3.2-1B",
+        torch_dtype=torch.float16 if device == "cuda" else torch.float32,
+        device_map="auto",  # Distribuzione automatica su CPU/GPU
+        token=huggingface_token  # Passa il token di autenticazione
+    )
     print("Modello caricato con successo.")
 
 @app.post("/generate")
