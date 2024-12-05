@@ -3,3 +3,4 @@ pydantic
 torch
 transformers
 uvicorn[standard]
+accelerate>=0.26.0
