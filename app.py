@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import torch
+import uvicorn
 
 app = FastAPI()
 
@@ -70,3 +71,8 @@ async def generate_text(request: PromptRequest):
         del model
         del tokenizer
         torch.cuda.empty_cache()  # Pulisci la cache se stai usando CUDA
+
+# Gestione dinamica della porta
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))  # Railway assegna una porta tramite la variabile d'ambiente PORT
+    uvicorn.run(app, host="0.0.0.0", port=port)
