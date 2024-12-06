@@ -16,9 +16,8 @@ PREDEFINED_RESPONSES = {
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
-# Modifica con il nuovo modello "meta-llama/Llama-3.1-8B-Instruct"
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/meta-llama/Llama-3.1-8B-Instruct"
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"  # Nuovo modello
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -38,9 +37,9 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 10,
-            "temperature": 0.1,
-            "top_k": 50,
+            "max_length": 30,
+            "temperature": 0.7,
+            "top_k": 30,
             "top_p": 0.9,
             "do_sample": True
         }
