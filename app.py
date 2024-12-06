@@ -1,8 +1,7 @@
 import os
+import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 import uvicorn
 
 app = FastAPI()
@@ -10,13 +9,16 @@ app = FastAPI()
 class PromptRequest(BaseModel):
     prompt: str
 
+# Risposte predefinite
 PREDEFINED_RESPONSES = {
     "ciao": "Ciao! Come posso aiutarti oggi?",
     "come stai?": "Sto bene, grazie! E tu?",
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
-device = "cuda" if torch.cuda.is_available() else "cpu"
+# URL del modello e token
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-1B"
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Assicurati che il token sia impostato nelle variabili d'ambiente
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -28,49 +30,25 @@ async def generate_text(request: PromptRequest):
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
         return {"response": PREDEFINED_RESPONSES[prompt]}
 
-    # Caricamento dinamico del modello e tokenizer
+    # Chiamata al servizio esterno per l'inferenza
     try:
-        huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
-        print("Caricamento del tokenizer...")
-        tokenizer = AutoTokenizer.from_pretrained("meta-llama/Llama-3.2-1B", token=huggingface_token)
-        print("Tokenizer caricato con successo.")
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        payload = {"inputs": prompt}
 
-        print(f"Caricamento del modello su {device}...")
-        model = AutoModelForCausalLM.from_pretrained(
-            "meta-llama/Llama-3.2-1B",
-            torch_dtype=torch.float16 if device == "cuda" else torch.float32,
-            device_map="auto",
-            token=huggingface_token
-        )
-        print("Modello caricato con successo.")
+        print("Invio della richiesta al servizio Hugging Face...")
+        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+        response.raise_for_status()  # Genera un'eccezione per HTTP error
 
-        # Usa il modello per generare una risposta
-        print("Generazione della risposta con il modello...")
-        with torch.no_grad():
-            inputs = tokenizer(prompt, return_tensors="pt", truncation=True, max_length=64).to(device)
-            output = model.generate(
-                **inputs,
-                max_length=30,
-                top_k=30,
-                top_p=0.9,
-                temperature=0.7,
-                do_sample=True
-            )
+        # Estrai il testo generato dalla risposta JSON
+        result = response.json()
+        generated_text = result.get("generated_text", "Errore: nessun testo generato.")
 
-        response_text = tokenizer.decode(output[0], skip_special_tokens=True)
-        print(f"Risposta generata: {response_text}")
-        return {"response": response_text}
+        print(f"Risposta generata dal servizio Hugging Face: {generated_text}")
+        return {"response": generated_text}
 
     except Exception as e:
-        print(f"Errore durante la generazione: {e}")
+        print(f"Errore durante la generazione con il servizio esterno: {e}")
         return {"response": "Errore nel generare la risposta."}
-
-    finally:
-        # Scarica il modello dalla memoria
-        print("Scaricamento del modello per liberare memoria.")
-        del model
-        del tokenizer
-        torch.cuda.empty_cache()  # Pulisci la cache se stai usando CUDA
 
 # Gestione dinamica della porta
 if __name__ == "__main__":
