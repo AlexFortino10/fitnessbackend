@@ -30,6 +30,10 @@ async def generate_text(request: PromptRequest):
 
     # Chiamata al servizio Hugging Face per la generazione del testo
     try:
+        # Verifica che il token di Hugging Face sia presente
+        if not HUGGINGFACE_TOKEN:
+            raise ValueError("Hugging Face Token non trovato.")
+
         headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
         payload = {
             "inputs": prompt,
@@ -43,12 +47,18 @@ async def generate_text(request: PromptRequest):
         }
 
         print("Invio della richiesta al servizio Hugging Face...")
+
+        # Fai la richiesta al servizio Hugging Face
         response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
 
-        # Aggiungi un controllo sullo status della risposta
-        response.raise_for_status()  # Solleva un errore se la risposta non è positiva (status code 4xx o 5xx)
+        # Logga la risposta di errore se presente
+        if response.status_code != 200:
+            print(f"Errore nella risposta: {response.status_code} - {response.text}")
+            return {"response": f"Errore nel generare la risposta: {response.text}"}
 
         result = response.json()
+        
+        # Verifica la presenza del campo 'generated_text' nella risposta
         if "generated_text" in result:
             generated_text = result["generated_text"]
             print(f"Risposta generata dal servizio Hugging Face: {generated_text}")
@@ -63,6 +73,9 @@ async def generate_text(request: PromptRequest):
     except requests.exceptions.RequestException as req_err:
         print(f"Errore di richiesta: {req_err}")
         return {"response": "Errore nella richiesta al servizio esterno."}
+    except ValueError as val_err:
+        print(f"Errore: {val_err}")
+        return {"response": f"Errore: {val_err}"}
     except Exception as e:
         print(f"Errore generico: {e}")
         return {"response": "Errore imprevisto nel generare la risposta."}
