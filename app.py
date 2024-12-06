@@ -37,8 +37,8 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 30,
-            "temperature": 0.7,
+            "max_length": 10,
+            "temperature": 0.1,
             "top_k": 30,
             "top_p": 0.9,
             "do_sample": True
