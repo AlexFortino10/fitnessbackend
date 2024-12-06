@@ -3,6 +3,7 @@ import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+import time
 
 app = FastAPI()
 
@@ -28,57 +29,60 @@ async def generate_text(request: PromptRequest):
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
         return {"response": PREDEFINED_RESPONSES[prompt]}
 
-    # Chiamata al servizio Hugging Face per la generazione del testo
-    try:
-        # Verifica che il token di Hugging Face sia presente
-        if not HUGGINGFACE_TOKEN:
-            raise ValueError("Hugging Face Token non trovato.")
+    # Verifica che il token di Hugging Face sia presente
+    if not HUGGINGFACE_TOKEN:
+        return {"response": "Errore: Token Hugging Face mancante. Controlla la configurazione."}
 
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        payload = {
-            "inputs": prompt,
-            "parameters": {
-                "max_length": 30,
-                "temperature": 0.7,
-                "top_k": 30,
-                "top_p": 0.9,
-                "do_sample": True
-            }
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_length": 30,
+            "temperature": 0.7,
+            "top_k": 30,
+            "top_p": 0.9,
+            "do_sample": True
         }
+    }
 
-        print("Invio della richiesta al servizio Hugging Face...")
+    # Retry per gestire il caricamento del modello
+    max_retries = 5
+    retry_delay = 10  # secondi
 
-        # Fai la richiesta al servizio Hugging Face
-        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+    for attempt in range(max_retries):
+        try:
+            print("Invio della richiesta al servizio Hugging Face...")
+            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+            
+            if response.status_code == 503:  # Modello in caricamento
+                error_details = response.json()
+                estimated_time = error_details.get("estimated_time", retry_delay)
+                print(f"Il modello è in caricamento, attendo {estimated_time} secondi prima di ritentare...")
+                time.sleep(estimated_time + 2)  # Aggiunge un buffer extra
+                continue
 
-        # Logga la risposta di errore se presente
-        if response.status_code != 200:
-            print(f"Errore nella risposta: {response.status_code} - {response.text}")
-            return {"response": f"Errore nel generare la risposta: {response.text}"}
+            # Se la risposta è positiva, elaborala
+            response.raise_for_status()
+            result = response.json()
 
-        result = response.json()
-        
-        # Verifica la presenza del campo 'generated_text' nella risposta
-        if "generated_text" in result:
-            generated_text = result["generated_text"]
-            print(f"Risposta generata dal servizio Hugging Face: {generated_text}")
-            return {"response": generated_text}
-        else:
-            print("Errore: Nessun testo generato dal servizio.")
-            return {"response": "Errore nel generare la risposta dal modello esterno."}
+            if "generated_text" in result:
+                generated_text = result["generated_text"]
+                print(f"Risposta generata dal servizio Hugging Face: {generated_text}")
+                return {"response": generated_text}
+            else:
+                print("Errore: Nessun testo generato dal servizio.")
+                return {"response": "Errore nel generare la risposta dal modello esterno."}
 
-    except requests.exceptions.HTTPError as http_err:
-        print(f"Errore HTTP: {http_err}")
-        return {"response": f"Errore nel generare la risposta: {http_err}"}
-    except requests.exceptions.RequestException as req_err:
-        print(f"Errore di richiesta: {req_err}")
-        return {"response": "Errore nella richiesta al servizio esterno."}
-    except ValueError as val_err:
-        print(f"Errore: {val_err}")
-        return {"response": f"Errore: {val_err}"}
-    except Exception as e:
-        print(f"Errore generico: {e}")
-        return {"response": "Errore imprevisto nel generare la risposta."}
+        except requests.exceptions.HTTPError as http_err:
+            print(f"Errore HTTP: {http_err}")
+            return {"response": f"Errore HTTP: {http_err}"}
+        except Exception as e:
+            print(f"Errore generico: {e}")
+            return {"response": f"Errore imprevisto: {e}"}
+
+    # Se esaurisce i tentativi
+    print("Il modello non è stato caricato dopo diversi tentativi.")
+    return {"response": "Errore: Il modello non è riuscito a caricarsi dopo diversi tentativi."}
 
 # Gestione dinamica della porta
 if __name__ == "__main__":
