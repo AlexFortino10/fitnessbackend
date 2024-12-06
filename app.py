@@ -17,7 +17,7 @@ PREDEFINED_RESPONSES = {
 }
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/gpt2"
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-1B"
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -37,7 +37,7 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 30,
+            "max_length": 100,  # Puoi aumentare o diminuire secondo necessità
             "temperature": 0.7,
             "top_k": 30,
             "top_p": 0.9,
@@ -46,8 +46,8 @@ async def generate_text(request: PromptRequest):
     }
 
     # Retry per gestire errori temporanei
-    max_retries = 3
-    retry_delay = 5  # secondi
+    max_retries = 5
+    retry_delay = 10  # secondi
 
     for attempt in range(max_retries):
         try:
@@ -59,8 +59,8 @@ async def generate_text(request: PromptRequest):
             print(f"Risultato completo: {result}")
 
             # Estrarre il testo generato
-            if isinstance(result, list) and len(result) > 0:
-                generated_text = result[0].get("generated_text", "")
+            if isinstance(result, dict) and "generated_text" in result:
+                generated_text = result["generated_text"]
                 print(f"Risposta generata: {generated_text}")
                 return {"response": generated_text}
 
