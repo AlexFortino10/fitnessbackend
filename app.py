@@ -3,26 +3,36 @@ import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
+import time
 
 app = FastAPI()
 
-# Classe per la richiesta
 class PromptRequest(BaseModel):
     prompt: str
 
-# Risposte predefinite
 PREDEFINED_RESPONSES = {
     "ciao": "Ciao! Come posso aiutarti oggi?",
     "come stai?": "Sto bene, grazie! E tu?",
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
-# Configurazione dell'Inference API
-API_URL = "https://api-inference.huggingface.co/models/meta-llama/Llama-3.2-1B"
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Assicurati che il token sia impostato come variabile d'ambiente
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/gpt2"
 
-def query_huggingface_api(prompt):
-    """Funzione per inviare una richiesta all'Inference API di Hugging Face."""
+@app.post("/generate")
+async def generate_text(request: PromptRequest):
+    prompt = request.prompt.strip().lower()
+    print(f"Ricevuto prompt: '{prompt}'")
+
+    # Risposta predefinita
+    if prompt in PREDEFINED_RESPONSES:
+        print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
+        return {"response": PREDEFINED_RESPONSES[prompt]}
+
+    # Controllo token
+    if not HUGGINGFACE_TOKEN:
+        return {"response": "Errore: Token Hugging Face mancante. Controlla la configurazione."}
+
     headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
     payload = {
         "inputs": prompt,
@@ -32,44 +42,42 @@ def query_huggingface_api(prompt):
             "top_k": 30,
             "top_p": 0.9,
             "do_sample": True
-        },
+        }
     }
 
-    try:
-        response = requests.post(API_URL, headers=headers, json=payload)
-        response.raise_for_status()  # Solleva un errore se la risposta non è OK
-        result = response.json()
-        
-        # Controlla se il modello ha generato un testo
-        if isinstance(result, list) and len(result) > 0 and "generated_text" in result[0]:
-            return result[0]["generated_text"]
-        else:
-            return "Errore: Nessun testo generato dal modello."
-    except requests.exceptions.RequestException as e:
-        return f"Errore nella richiesta al modello: {str(e)}"
+    # Retry per gestire errori temporanei
+    max_retries = 3
+    retry_delay = 5  # secondi
 
-@app.post("/generate")
-async def generate_text(request: PromptRequest):
-    prompt = request.prompt.strip().lower()
-    print(f"Ricevuto prompt: '{prompt}'")
+    for attempt in range(max_retries):
+        try:
+            print("Invio della richiesta al servizio Hugging Face...")
+            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+            response.raise_for_status()  # Lancia un'eccezione se lo stato HTTP è diverso da 200
 
-    # Controlla se esiste una risposta predefinita
-    if prompt in PREDEFINED_RESPONSES:
-        print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return {"response": PREDEFINED_RESPONSES[prompt]}
+            result = response.json()
+            print(f"Risultato completo: {result}")
 
-    # Verifica che il token sia presente
-    if not HUGGINGFACE_TOKEN:
-        print("Errore: Token Hugging Face mancante.")
-        return {"response": "Errore: Token Hugging Face mancante. Controlla la configurazione."}
+            # Estrarre il testo generato
+            if isinstance(result, list) and len(result) > 0:
+                generated_text = result[0].get("generated_text", "")
+                print(f"Risposta generata: {generated_text}")
+                return {"response": generated_text}
 
-    # Genera il testo usando l'API di Hugging Face
-    print("Invio della richiesta al modello Hugging Face...")
-    response_text = query_huggingface_api(prompt)
-    print(f"Risposta generata: {response_text}")
-    return {"response": response_text}
+            print("Errore: Nessun testo generato.")
+            return {"response": "Errore nel generare la risposta dal modello esterno."}
 
-# Gestione dinamica della porta
+        except requests.exceptions.RequestException as e:
+            print(f"Errore di richiesta: {e}")
+            if attempt < max_retries - 1:
+                print(f"Retry tra {retry_delay} secondi...")
+                time.sleep(retry_delay)
+            else:
+                return {"response": f"Errore imprevisto: {e}"}
+
+    # Esauriti i tentativi
+    return {"response": "Errore: Non è stato possibile ottenere una risposta dal modello esterno."}
+
 if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))  # Railway assegna una porta tramite la variabile d'ambiente PORT
+    port = int(os.getenv("PORT", 8080))
     uvicorn.run(app, host="0.0.0.0", port=port)
