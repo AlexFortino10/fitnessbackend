@@ -11,9 +11,9 @@ class PromptRequest(BaseModel):
     prompt: str
 
 PREDEFINED_RESPONSES = {
-    "ciao": "Ciao! Come posso aiutarti oggi?",
-    "come stai?": "Sto bene, grazie! E tu?",
-    "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
+    "Ciao": "Ciao! Come posso aiutarti oggi?",
+    "Come stai?": "Sto bene, grazie! E tu?",
+    "Allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
