@@ -27,11 +27,11 @@ async def generate_text(request: PromptRequest):
     # Risposta predefinita
     if prompt in PREDEFINED_RESPONSES:
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return {"response": PREDEFINED_RESPONSES[prompt]}
+        return PREDEFINED_RESPONSES[prompt]
 
     # Controllo token
     if not HUGGINGFACE_TOKEN:
-        return {"response": "Errore: Token Hugging Face mancante. Controlla la configurazione."}
+        return "Errore: Token Hugging Face mancante. Controlla la configurazione."
 
     headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
     payload = {
@@ -62,10 +62,10 @@ async def generate_text(request: PromptRequest):
             if isinstance(result, list) and len(result) > 0:
                 generated_text = result[0].get("generated_text", "")
                 print(f"Risposta generata: {generated_text}")
-                return {"response": generated_text}
+                return generated_text
 
             print("Errore: Nessun testo generato.")
-            return {"response": "Errore nel generare la risposta dal modello esterno."}
+            return "Errore nel generare la risposta dal modello esterno."
 
         except requests.exceptions.RequestException as e:
             print(f"Errore di richiesta: {e}")
@@ -73,10 +73,10 @@ async def generate_text(request: PromptRequest):
                 print(f"Retry tra {retry_delay} secondi...")
                 time.sleep(retry_delay)
             else:
-                return {"response": f"Errore imprevisto: {e}"}
+                return f"Errore imprevisto: {e}"
 
     # Esauriti i tentativi
-    return {"response": "Errore: Non è stato possibile ottenere una risposta dal modello esterno."}
+    return "Errore: Non è stato possibile ottenere una risposta dal modello esterno."
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
