@@ -16,6 +16,9 @@ PREDEFINED_RESPONSES = {
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
+# Cache per memorizzare risposte frequenti
+CACHE = {}
+
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
@@ -25,15 +28,47 @@ def clean_text(text: str) -> str:
     """
     return " ".join(text.splitlines()).strip()
 
+def preload_cache():
+    """
+    Pre-carica risposte per prompt comuni.
+    """
+    common_prompts = ["ciao", "come stai?", "allenamento"]
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+    for prompt in common_prompts:
+        payload = {"inputs": prompt}
+        try:
+            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=10)
+            response.raise_for_status()
+            result = response.json()
+            if isinstance(result, list) and len(result) > 0:
+                CACHE[prompt] = clean_text(result[0].get("generated_text", ""))
+            else:
+                CACHE[prompt] = "Risposta non disponibile."
+        except Exception as e:
+            CACHE[prompt] = f"Errore nel pre-caricamento: {e}"
+
+@app.on_event("startup")
+async def on_startup():
+    """
+    Funzione di avvio per pre-caricare la cache.
+    """
+    preload_cache()
+
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
     prompt = request.prompt.strip().lower()
     print(f"Ricevuto prompt: '{prompt}'")
 
+    # Controllo nella cache
+    if prompt in CACHE:
+        print("Risposta trovata nella cache.")
+        return CACHE[prompt]
+
     # Risposta predefinita
     if prompt in PREDEFINED_RESPONSES:
-        print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return clean_text(PREDEFINED_RESPONSES[prompt])
+        response = clean_text(PREDEFINED_RESPONSES[prompt])
+        CACHE[prompt] = response  # Salva nella cache
+        return response
 
     # Controllo token
     if not HUGGINGFACE_TOKEN:
@@ -51,38 +86,21 @@ async def generate_text(request: PromptRequest):
         }
     }
 
-    # Retry per gestire errori temporanei
-    max_retries = 3
-    retry_delay = 5  # secondi
+    try:
+        print("Invio della richiesta al servizio Hugging Face...")
+        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=10)
+        response.raise_for_status()
+        result = response.json()
 
-    for attempt in range(max_retries):
-        try:
-            print("Invio della richiesta al servizio Hugging Face...")
-            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
-            response.raise_for_status()  # Lancia un'eccezione se lo stato HTTP è diverso da 200
+        if isinstance(result, list) and len(result) > 0:
+            generated_text = clean_text(result[0].get("generated_text", ""))
+            CACHE[prompt] = generated_text  # Salva nella cache
+            return generated_text
 
-            result = response.json()
-            print(f"Risultato completo: {result}")
-
-            # Estrarre il testo generato
-            if isinstance(result, list) and len(result) > 0:
-                generated_text = result[0].get("generated_text", "")
-                print(f"Risposta generata: {generated_text}")
-                return clean_text(generated_text)
-
-            print("Errore: Nessun testo generato.")
-            return clean_text("Errore nel generare la risposta dal modello esterno.")
-
-        except requests.exceptions.RequestException as e:
-            print(f"Errore di richiesta: {e}")
-            if attempt < max_retries - 1:
-                print(f"Retry tra {retry_delay} secondi...")
-                time.sleep(retry_delay)
-            else:
-                return clean_text(f"Errore imprevisto: {e}")
-
-    # Esauriti i tentativi
-    return clean_text("Errore: Non è stato possibile ottenere una risposta dal modello esterno.")
+        return clean_text("Errore nel generare la risposta dal modello esterno.")
+    except requests.exceptions.RequestException as e:
+        print(f"Errore di richiesta: {e}")
+        return clean_text(f"Errore imprevisto: {e}")
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
