@@ -20,7 +20,7 @@ PREDEFINED_RESPONSES = {
 CACHE = {}  # Cache per memorizzare risposte frequenti
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
-TIMEOUT = 15  # Timeout configurabile (secondi)
+TIMEOUT = 30  # Timeout configurabile (secondi)
 
 def clean_text(text: str) -> str:
     """
