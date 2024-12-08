@@ -1,3 +1,24 @@
+import os
+import requests
+from fastapi import FastAPI
+from pydantic import BaseModel
+import uvicorn
+import time
+
+app = FastAPI()  # Definizione dell'app FastAPI
+
+class PromptRequest(BaseModel):
+    prompt: str
+
+PREDEFINED_RESPONSES = {
+    "ciao": "Ciao! Come posso aiutarti oggi?",
+    "come stai?": "Sto bene, grazie! E tu?",
+    "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
+}
+
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
+
 def clean_text(text: str) -> str:
     """
     Rimuove caratteri indesiderati come '\n' o altri caratteri non leggibili.
@@ -62,3 +83,7 @@ async def generate_text(request: PromptRequest):
 
     # Esauriti i tentativi
     return clean_text("Errore: Non è stato possibile ottenere una risposta dal modello esterno.")
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))
+    uvicorn.run(app, host="0.0.0.0", port=port)
