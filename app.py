@@ -4,6 +4,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import uvicorn
 import time
+import threading
 
 app = FastAPI()  # Definizione dell'app FastAPI
 
@@ -16,11 +17,10 @@ PREDEFINED_RESPONSES = {
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
 }
 
-# Cache per memorizzare risposte frequenti
-CACHE = {}
-
+CACHE = {}  # Cache per memorizzare risposte frequenti
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
+TIMEOUT = 15  # Timeout configurabile (secondi)
 
 def clean_text(text: str) -> str:
     """
@@ -37,7 +37,7 @@ def preload_cache():
     for prompt in common_prompts:
         payload = {"inputs": prompt}
         try:
-            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=10)
+            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=TIMEOUT)
             response.raise_for_status()
             result = response.json()
             if isinstance(result, list) and len(result) > 0:
@@ -52,7 +52,7 @@ async def on_startup():
     """
     Funzione di avvio per pre-caricare la cache.
     """
-    preload_cache()
+    threading.Thread(target=preload_cache).start()  # Usa threading per non bloccare il server
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -88,7 +88,7 @@ async def generate_text(request: PromptRequest):
 
     try:
         print("Invio della richiesta al servizio Hugging Face...")
-        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=10)
+        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=TIMEOUT)
         response.raise_for_status()
         result = response.json()
 
@@ -98,6 +98,9 @@ async def generate_text(request: PromptRequest):
             return generated_text
 
         return clean_text("Errore nel generare la risposta dal modello esterno.")
+    except requests.exceptions.ReadTimeout:
+        print("Errore: Timeout raggiunto.")
+        return clean_text("Il server è occupato. Riprova più tardi.")
     except requests.exceptions.RequestException as e:
         print(f"Errore di richiesta: {e}")
         return clean_text(f"Errore imprevisto: {e}")
