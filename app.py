@@ -22,7 +22,7 @@ HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-
 
 # Timeout per richieste al server Hugging Face
 PRELOAD_TIMEOUT = 60  # Timeout più alto per pre-caricamento
-REQUEST_TIMEOUT = 15  # Timeout durante il funzionamento
+REQUEST_TIMEOUT = 45  # Timeout durante il funzionamento
 
 def clean_text(text: str) -> str:
     """
