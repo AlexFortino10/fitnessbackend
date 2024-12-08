@@ -1,23 +1,8 @@
-import os
-import requests
-from fastapi import FastAPI
-from pydantic import BaseModel
-import uvicorn
-import time
-
-app = FastAPI()
-
-class PromptRequest(BaseModel):
-    prompt: str
-
-PREDEFINED_RESPONSES = {
-    "ciao": "Ciao! Come posso aiutarti oggi?",
-    "come stai?": "Sto bene, grazie! E tu?",
-    "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene."
-}
-
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"  # Nuovo modello
+def clean_text(text: str) -> str:
+    """
+    Rimuove caratteri indesiderati come '\n' o altri caratteri non leggibili.
+    """
+    return " ".join(text.splitlines()).strip()
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -27,11 +12,11 @@ async def generate_text(request: PromptRequest):
     # Risposta predefinita
     if prompt in PREDEFINED_RESPONSES:
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return PREDEFINED_RESPONSES[prompt]
+        return clean_text(PREDEFINED_RESPONSES[prompt])
 
     # Controllo token
     if not HUGGINGFACE_TOKEN:
-        return "Errore: Token Hugging Face mancante. Controlla la configurazione."
+        return clean_text("Errore: Token Hugging Face mancante. Controlla la configurazione.")
 
     headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
     payload = {
@@ -62,10 +47,10 @@ async def generate_text(request: PromptRequest):
             if isinstance(result, list) and len(result) > 0:
                 generated_text = result[0].get("generated_text", "")
                 print(f"Risposta generata: {generated_text}")
-                return generated_text
+                return clean_text(generated_text)
 
             print("Errore: Nessun testo generato.")
-            return "Errore nel generare la risposta dal modello esterno."
+            return clean_text("Errore nel generare la risposta dal modello esterno.")
 
         except requests.exceptions.RequestException as e:
             print(f"Errore di richiesta: {e}")
@@ -73,11 +58,7 @@ async def generate_text(request: PromptRequest):
                 print(f"Retry tra {retry_delay} secondi...")
                 time.sleep(retry_delay)
             else:
-                return f"Errore imprevisto: {e}"
+                return clean_text(f"Errore imprevisto: {e}")
 
     # Esauriti i tentativi
-    return "Errore: Non è stato possibile ottenere una risposta dal modello esterno."
-
-if __name__ == "__main__":
-    port = int(os.getenv("PORT", 8080))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    return clean_text("Errore: Non è stato possibile ottenere una risposta dal modello esterno.")
