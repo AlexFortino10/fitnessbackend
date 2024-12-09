@@ -17,29 +17,26 @@ PREDEFINED_RESPONSES = {
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene.",
 }
 
-# Configurazione Hugging Face
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
+# Configurazione OpenAI
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+OPENAI_API_URL = "https://api.openai.com/v1/chat/completions"
 HTTP_CLIENT = httpx.AsyncClient(timeout=40)  # Timeout di 40 secondi
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
-async def fetch_from_huggingface(prompt: str):
-    if not HUGGINGFACE_TOKEN:
-        raise ValueError("Errore: Token Hugging Face mancante.")
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+async def fetch_from_openai(prompt: str):
+    if not OPENAI_API_KEY:
+        raise ValueError("Errore: API Key di OpenAI mancante.")
+    headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     payload = {
-        "inputs": prompt,
-        "parameters": {
-            "max_length": 50,  # Aumento la lunghezza massima
-            "temperature": 0.4,
-            "top_k": 40,
-            "top_p": 0.9,
-            "do_sample": True,
-        },
+        "model": "gpt-4",  # Specifica il modello GPT-4
+        "messages": [{"role": "user", "content": prompt}],
+        "max_tokens": 150,  # Limite di token nella risposta
+        "temperature": 0.7,  # Controlla la casualità della risposta
+        "top_p": 0.9,       # Nucleus sampling
     }
     try:
-        response = await HTTP_CLIENT.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+        response = await HTTP_CLIENT.post(OPENAI_API_URL, headers=headers, json=payload)
         response.raise_for_status()  # Solleva un'eccezione se la risposta è di errore
         return response.json()
     except httpx.RequestError as e:
@@ -49,17 +46,14 @@ async def fetch_from_huggingface(prompt: str):
         print(f"Errore HTTP {e.response.status_code}: {e.response.text}")
         raise
     except Exception as e:
-        print(f"Errore durante la chiamata a Hugging Face: {e}")
+        print(f"Errore durante la chiamata a OpenAI: {e}")
         raise
 
 def clean_text(prompt: str, text: str) -> str:
     # Rimuove newline, caratteri speciali e spazi multipli
     text = re.sub(r"[\n\r*#\\]", " ", text)  # Rimuove i caratteri speciali
     text = re.sub(r"\s+", " ", text)  # Sostituisce spazi multipli con uno singolo
-    escaped_prompt = re.escape(prompt.strip())  # Escape del prompt per evitare conflitti
-    pattern = rf"^{escaped_prompt}\W*"
-    text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
-    return text
+    return text.strip()
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -71,12 +65,12 @@ async def generate_text(request: PromptRequest):
         return PREDEFINED_RESPONSES[prompt.lower()]  # Restituisce solo il testo senza "response"
 
     try:
-        # 2. Chiamata asincrona a Hugging Face
-        print("Invio richiesta a Hugging Face...")
-        result = await fetch_from_huggingface(prompt)
-        if isinstance(result, list) and len(result) > 0:
-            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-            return generated_text  # Restituisce direttamente il testo generato, senza "response"
+        # 2. Chiamata asincrona a OpenAI
+        print("Invio richiesta a OpenAI...")
+        result = await fetch_from_openai(prompt)
+        if "choices" in result and len(result["choices"]) > 0:
+            generated_text = clean_text(prompt, result["choices"][0]["message"]["content"])
+            return generated_text  # Restituisce direttamente il testo generato
         return FALLBACK_RESPONSE
     except RetryError:
         print("Numero massimo di tentativi superato durante il recupero del modello.")
@@ -88,7 +82,7 @@ async def generate_text(request: PromptRequest):
 @app.on_event("startup")
 async def warm_up_model():
     try:
-        await fetch_from_huggingface("Ciao")
+        await fetch_from_openai("Ciao")
         print("Modello riscaldato correttamente.")
     except Exception as e:
         print(f"Errore durante il warm-up: {e}")
