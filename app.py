@@ -7,7 +7,7 @@ import re
 app = FastAPI()
 
 # Configurazione del modello
-MODEL_NAME = "google/gemma-2-2b-it"  # Sostituisci con il modello desiderato
+MODEL_NAME = "google/gemma-2-2b-it"
 model = None
 tokenizer = None
 
@@ -19,8 +19,12 @@ async def load_model():
     global model, tokenizer
     print("Caricamento del modello in corso...")
     try:
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
-        model = AutoModelForCausalLM.from_pretrained(MODEL_NAME, use_auth_token=os.getenv("HUGGINGFACE_TOKEN"))
+        # Utilizza `token` invece di `use_auth_token`
+        huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
+        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=huggingface_token)
+        model = AutoModelForCausalLM.from_pretrained(
+            MODEL_NAME, token=huggingface_token, low_cpu_mem_usage=True
+        )
         print("Modello caricato con successo!")
     except Exception as e:
         print(f"Errore durante il caricamento del modello: {e}")
