@@ -29,6 +29,39 @@ def clean_text(text: str) -> str:
     """
     return " ".join(text.splitlines()).strip()
 
+def preload_cache():
+    """
+    Pre-carica la cache per prompt comuni e pre-riscalda il modello.
+    """
+    print("Pre-caricamento della cache e pre-riscaldamento del modello...")
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+    common_prompts = ["ciao", "come stai?", "allenamento"]
+
+    for prompt in common_prompts:
+        payload = {"inputs": prompt, "parameters": {"max_length": 50}}
+        try:
+            # Richiesta di pre-riscaldamento
+            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+            response.raise_for_status()
+            result = response.json()
+
+            # Estrarre e salvare nella cache
+            if isinstance(result, list) and len(result) > 0:
+                CACHE[prompt] = clean_text(result[0].get("generated_text", ""))
+                print(f"Risposta pre-caricata per '{prompt}': {CACHE[prompt]}")
+            else:
+                CACHE[prompt] = "Risposta non disponibile."
+        except Exception as e:
+            CACHE[prompt] = f"Errore durante il pre-riscaldamento: {e}"
+            print(f"Errore durante il pre-caricamento per '{prompt}': {e}")
+
+@app.on_event("startup")
+async def on_startup():
+    """
+    Funzione di avvio per pre-caricare la cache e pre-riscaldare il modello.
+    """
+    preload_cache()
+
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
     """
@@ -55,8 +88,8 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 15,  # Lunghezza maggiore per miglior contesto
-            "temperature": 0.1,
+            "max_length": 50,
+            "temperature": 0.7,
             "top_k": 40,
             "top_p": 0.9,
             "do_sample": True,
@@ -65,7 +98,6 @@ async def generate_text(request: PromptRequest):
 
     try:
         print("Invio della richiesta al servizio Hugging Face...")
-        start_time = time.time()
         response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
         response.raise_for_status()
         result = response.json()
@@ -74,7 +106,6 @@ async def generate_text(request: PromptRequest):
         if isinstance(result, list) and len(result) > 0:
             generated_text = clean_text(result[0].get("generated_text", ""))
             CACHE[prompt] = generated_text  # Salvataggio nella cache
-            print(f"Risposta generata in {time.time() - start_time:.2f} secondi.")
             return generated_text
 
         return "Errore nel generare la risposta dal modello esterno."
