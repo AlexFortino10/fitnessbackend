@@ -31,8 +31,8 @@ async def fetch_from_openai(prompt: str):
     payload = {
         "model": "gpt-4",  # Specifica il modello GPT-4
         "messages": [{"role": "user", "content": prompt}],
-        "max_tokens": 150,  # Limite di token nella risposta
-        "temperature": 0.7,  # Controlla la casualità della risposta
+        "max_tokens": 300,  # Limite di token nella risposta
+        "temperature": 0.9,  # Controlla la casualità della risposta
         "top_p": 0.9,       # Nucleus sampling
     }
     try:
