@@ -32,7 +32,7 @@ async def fetch_from_huggingface(prompt: str):
         "inputs": prompt,
         "parameters": {
             "max_length": 50,  # Aumento la lunghezza massima
-            "temperature": 0.9,
+            "temperature": 0.7,
             "top_k": 40,
             "top_p": 0.9,
             "do_sample": True,
@@ -53,7 +53,8 @@ async def fetch_from_huggingface(prompt: str):
         raise
 
 def clean_text(prompt: str, text: str) -> str:
-    text = re.sub(r"[\n\r*]", " ", text)  # Rimuove newline e caratteri speciali
+    # Rimuove newline, caratteri speciali e spazi multipli
+    text = re.sub(r"[\n\r*#\\]", " ", text)  # Rimuove i caratteri speciali
     text = re.sub(r"\s+", " ", text)  # Sostituisce spazi multipli con uno singolo
     escaped_prompt = re.escape(prompt.strip())  # Escape del prompt per evitare conflitti
     pattern = rf"^{escaped_prompt}\W*"
@@ -67,7 +68,7 @@ async def generate_text(request: PromptRequest):
 
     # 1. Controllo risposte predefinite
     if prompt.lower() in PREDEFINED_RESPONSES:
-        return {"response": PREDEFINED_RESPONSES[prompt.lower()]}
+        return PREDEFINED_RESPONSES[prompt.lower()]  # Restituisce solo il testo senza "response"
 
     try:
         # 2. Chiamata asincrona a Hugging Face
@@ -75,14 +76,14 @@ async def generate_text(request: PromptRequest):
         result = await fetch_from_huggingface(prompt)
         if isinstance(result, list) and len(result) > 0:
             generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-            return {"response": generated_text}
-        return {"response": FALLBACK_RESPONSE}
+            return generated_text  # Restituisce direttamente il testo generato, senza "response"
+        return FALLBACK_RESPONSE
     except RetryError:
         print("Numero massimo di tentativi superato durante il recupero del modello.")
-        return {"response": FALLBACK_RESPONSE}
+        return FALLBACK_RESPONSE
     except Exception as e:
         print(f"Errore: {e}")
-        return {"response": FALLBACK_RESPONSE}
+        return FALLBACK_RESPONSE
 
 @app.on_event("startup")
 async def warm_up_model():
