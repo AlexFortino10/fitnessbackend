@@ -3,5 +3,6 @@ pydantic
 torch
 httpx
 transformers
+tenacity
 uvicorn[standard]
 accelerate>=0.26.0
