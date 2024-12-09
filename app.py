@@ -29,7 +29,7 @@ async def fetch_from_openai(prompt: str):
         raise ValueError("Errore: API Key di OpenAI mancante.")
     headers = {"Authorization": f"Bearer {OPENAI_API_KEY}"}
     payload = {
-        "model": "gpt-4",  # Specifica il modello GPT-4
+        "model": "gpt-3.5-turbo",  # Specifica il modello GPT-4
         "messages": [{"role": "user", "content": prompt}],
         "max_tokens": 300,  # Limite di token nella risposta
         "temperature": 0.9,  # Controlla la casualità della risposta
