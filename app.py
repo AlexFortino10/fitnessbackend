@@ -2,10 +2,8 @@ import os
 import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
+import time
 import re
-import asyncio
-import httpx  # Usato per richieste asincrone
-import time  # Per i ritardi tra i tentativi
 
 app = FastAPI()
 
@@ -18,6 +16,9 @@ PREDEFINED_RESPONSES = {
     "come stai?": "Sto bene, grazie! E tu?",
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene.",
 }
+
+# Cache per risposte recenti
+CACHE = {}
 
 # Configurazione API Hugging Face
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
@@ -38,22 +39,6 @@ def clean_text(prompt: str, response: str) -> str:
 
     return cleaned_response
 
-@app.on_event("startup")
-async def on_startup():
-    """
-    Pre-riscalda il modello per ridurre i tempi di risposta iniziali.
-    """
-    if HUGGINGFACE_TOKEN:
-        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-        payload = {"inputs": "ciao", "parameters": {"max_length": 10}}
-        try:
-            print("Pre-riscaldamento del modello...")
-            async with httpx.AsyncClient() as client:
-                await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-            print("Modello pre-riscaldato con successo!")
-        except Exception as e:
-            print(f"Errore durante il pre-riscaldamento: {e}")
-
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
     """
@@ -67,7 +52,12 @@ async def generate_text(request: PromptRequest):
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
         return PREDEFINED_RESPONSES[prompt]
 
-    # 2. Richiesta al modello Hugging Face
+    # 2. Controllo nella cache
+    if prompt in CACHE:
+        print(f"Risposta trovata nella cache per il prompt: '{prompt}'")
+        return CACHE[prompt]
+
+    # 3. Richiesta al modello Hugging Face
     if not HUGGINGFACE_TOKEN:
         return "Errore: Token Hugging Face mancante."
 
@@ -75,7 +65,7 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 10,  # Ridotto per velocizzare la risposta
+            "max_length": 15,
             "temperature": 0.7,
             "top_k": 40,
             "top_p": 0.9,
@@ -83,36 +73,22 @@ async def generate_text(request: PromptRequest):
         },
     }
 
-    retry_attempts = 3  # Numero di tentativi in caso di errore
-    for attempt in range(retry_attempts):
-        try:
-            # Invia la richiesta asincrona
-            async with httpx.AsyncClient() as client:
-                response = await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-                response.raise_for_status()
-                result = response.json()
+    try:
+        print("Invio della richiesta al servizio Hugging Face...")
+        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+        response.raise_for_status()
+        result = response.json()
 
-                # 3. Estrarre e pulire il testo generato
-                if isinstance(result, list) and len(result) > 0:
-                    generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-                    return generated_text
+        # 4. Estrarre e pulire il testo generato
+        if isinstance(result, list) and len(result) > 0:
+            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
+            CACHE[prompt] = generated_text  # Salvataggio nella cache
+            return generated_text
 
-            return "Errore nel generare la risposta dal modello esterno."
-
-        except httpx.HTTPStatusError as e:
-            if e.response.status_code == 503:
-                # Gestione dell'errore 503, tentativo di ritentare dopo una breve pausa
-                print(f"Errore 503 ricevuto. Tentativo {attempt + 1} di {retry_attempts}.")
-                time.sleep(5)  # Aspetta 5 secondi prima di ritentare
-            else:
-                print(f"Errore di stato HTTP: {e.response.status_code}")
-                return f"Errore nel comunicare con il server di Hugging Face: {e.response.status_code}"
-        except httpx.RequestError as e:
-            print(f"Errore di richiesta al modello: {e}")
-            return "Il server è occupato o lento. Riprova più tardi."
-
-    # Se tutti i tentativi falliscono, restituisci un errore
-    return "Errore nel generare la risposta dal modello esterno dopo diversi tentativi."
+        return "Errore nel generare la risposta dal modello esterno."
+    except requests.exceptions.RequestException as e:
+        print(f"Errore di richiesta al modello: {e}")
+        return "Il server è occupato o lento. Riprova più tardi."
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
