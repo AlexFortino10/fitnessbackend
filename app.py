@@ -26,6 +26,9 @@ CACHE = {}
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
+# Configurazione client HTTP
+HTTP_CLIENT = httpx.AsyncClient(timeout=10)
+
 def clean_text(prompt: str, response: str) -> str:
     """
     Rimuove il prompt e qualsiasi sua variante dalla risposta.
@@ -42,7 +45,7 @@ def clean_text(prompt: str, response: str) -> str:
     return cleaned_response
 
 # Funzione di retry con tenacity
-@retry(wait=wait_fixed(5), stop=stop_after_attempt(3))
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 async def fetch_from_huggingface(prompt: str):
     """
     Funzione asincrona che invia una richiesta al servizio Hugging Face.
@@ -63,10 +66,9 @@ async def fetch_from_huggingface(prompt: str):
         },
     }
     
-    async with httpx.AsyncClient() as client:
-        response = await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()  # Solleva un'eccezione se la risposta è di errore
-        return response.json()
+    response = await HTTP_CLIENT.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+    response.raise_for_status()  # Solleva un'eccezione se la risposta è di errore
+    return response.json()
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -79,12 +81,12 @@ async def generate_text(request: PromptRequest):
     # 1. Controllo risposte predefinite
     if prompt in PREDEFINED_RESPONSES:
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return PREDEFINED_RESPONSES[prompt]
+        return {"response": PREDEFINED_RESPONSES[prompt]}
 
     # 2. Controllo nella cache
     if prompt in CACHE:
         print(f"Risposta trovata nella cache per il prompt: '{prompt}'")
-        return CACHE[prompt]
+        return {"response": CACHE[prompt]}
 
     try:
         # 3. Chiamata asincrona al modello Hugging Face
@@ -94,16 +96,23 @@ async def generate_text(request: PromptRequest):
         if isinstance(result, list) and len(result) > 0:
             generated_text = clean_text(prompt, result[0].get("generated_text", ""))
             CACHE[prompt] = generated_text  # Salvataggio nella cache
-            return generated_text
+            return {"response": generated_text}
 
-        return "Errore nel generare la risposta dal modello esterno."
+        return {"response": "Errore nel generare la risposta dal modello esterno."}
     
     except RetryError:
-        return "Il server è temporaneamente occupato. Riprova più tardi."
+        return {"response": "Il server è temporaneamente occupato. Riprova più tardi."}
 
     except Exception as e:
         print(f"Errore: {e}")
-        return "Errore nel comunicare con il server. Riprova più tardi."
+        return {"response": "Errore nel comunicare con il server. Riprova più tardi."}
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    """
+    Chiude il client HTTP quando il server viene spento.
+    """
+    await HTTP_CLIENT.aclose()
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
