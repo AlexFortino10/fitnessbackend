@@ -3,6 +3,8 @@ import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
 import re
+import asyncio
+import httpx  # Usato per richieste asincrone
 
 app = FastAPI()
 
@@ -20,7 +22,7 @@ PREDEFINED_RESPONSES = {
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
-def clean_text(prompt: str, response: str) -> str:
+async def clean_text(prompt: str, response: str) -> str:
     """
     Rimuove il prompt e qualsiasi sua variante dalla risposta.
     """
@@ -45,7 +47,8 @@ async def on_startup():
         payload = {"inputs": "ciao", "parameters": {"max_length": 10}}
         try:
             print("Pre-riscaldamento del modello...")
-            requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+            async with httpx.AsyncClient() as client:
+                await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
             print("Modello pre-riscaldato con successo!")
         except Exception as e:
             print(f"Errore durante il pre-riscaldamento: {e}")
@@ -71,7 +74,7 @@ async def generate_text(request: PromptRequest):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 15,
+            "max_length": 10,  # Ridotto per velocizzare la risposta
             "temperature": 0.7,
             "top_k": 40,
             "top_p": 0.9,
@@ -80,18 +83,19 @@ async def generate_text(request: PromptRequest):
     }
 
     try:
-        print("Invio della richiesta al servizio Hugging Face...")
-        response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-        response.raise_for_status()
-        result = response.json()
+        # Invia la richiesta asincrona
+        async with httpx.AsyncClient() as client:
+            response = await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+            response.raise_for_status()
+            result = response.json()
 
-        # 3. Estrarre e pulire il testo generato
-        if isinstance(result, list) and len(result) > 0:
-            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-            return generated_text
+            # 3. Estrarre e pulire il testo generato
+            if isinstance(result, list) and len(result) > 0:
+                generated_text = await clean_text(prompt, result[0].get("generated_text", ""))
+                return generated_text
 
         return "Errore nel generare la risposta dal modello esterno."
-    except requests.exceptions.RequestException as e:
+    except httpx.RequestError as e:
         print(f"Errore di richiesta al modello: {e}")
         return "Il server è occupato o lento. Riprova più tardi."
 
