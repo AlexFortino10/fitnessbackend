@@ -4,7 +4,6 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 import re
 from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
-from cachetools import LRUCache
 
 app = FastAPI()
 
@@ -17,9 +16,6 @@ PREDEFINED_RESPONSES = {
     "come stai?": "Sto bene, grazie! E tu?",
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene.",
 }
-
-# Cache per risposte recenti
-CACHE = LRUCache(maxsize=100)
 
 # Configurazione Hugging Face
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
@@ -73,17 +69,12 @@ async def generate_text(request: PromptRequest):
     if prompt.lower() in PREDEFINED_RESPONSES:
         return {"response": PREDEFINED_RESPONSES[prompt.lower()]}
 
-    # 2. Controllo nella cache
-    if prompt.lower() in CACHE:
-        return {"response": CACHE[prompt.lower()]}
-
     try:
-        # 3. Chiamata asincrona a Hugging Face
+        # 2. Chiamata asincrona a Hugging Face
         print("Invio richiesta a Hugging Face...")
         result = await fetch_from_huggingface(prompt)
         if isinstance(result, list) and len(result) > 0:
             generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-            CACHE[prompt.lower()] = generated_text  # Salvataggio nella cache
             return {"response": generated_text}
         return {"response": FALLBACK_RESPONSE}
     except RetryError:
