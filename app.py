@@ -22,7 +22,7 @@ PREDEFINED_RESPONSES = {
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
-async def clean_text(prompt: str, response: str) -> str:
+def clean_text(prompt: str, response: str) -> str:
     """
     Rimuove il prompt e qualsiasi sua variante dalla risposta.
     """
@@ -91,7 +91,7 @@ async def generate_text(request: PromptRequest):
 
             # 3. Estrarre e pulire il testo generato
             if isinstance(result, list) and len(result) > 0:
-                generated_text = await clean_text(prompt, result[0].get("generated_text", ""))
+                generated_text = clean_text(prompt, result[0].get("generated_text", ""))
                 return generated_text
 
         return "Errore nel generare la risposta dal modello esterno."
