@@ -1,84 +1,95 @@
-from fastapi import FastAPI, HTTPException
-from transformers import AutoModelForCausalLM, AutoTokenizer
-import torch
 import os
+import httpx
+from fastapi import FastAPI
+from pydantic import BaseModel
 import re
+from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
+from cachetools import LRUCache
 
 app = FastAPI()
 
-# Configurazione del modello
-MODEL_NAME = "google/gemma-2-2b-it"
-model = None
-tokenizer = None
+class PromptRequest(BaseModel):
+    prompt: str
 
-@app.on_event("startup")
-async def load_model():
-    """
-    Carica il modello durante l'avvio dell'applicazione.
-    """
-    global model, tokenizer
-    print("Caricamento del modello in corso...")
-    try:
-        # Utilizza `token` invece di `use_auth_token`
-        huggingface_token = os.getenv("HUGGINGFACE_TOKEN")
-        tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME, token=huggingface_token)
-        model = AutoModelForCausalLM.from_pretrained(
-            MODEL_NAME, token=huggingface_token, low_cpu_mem_usage=True
-        )
-        print("Modello caricato con successo!")
-    except Exception as e:
-        print(f"Errore durante il caricamento del modello: {e}")
-        raise HTTPException(status_code=500, detail="Errore durante il caricamento del modello.")
+# Risposte predefinite
+PREDEFINED_RESPONSES = {
+    "ciao": "Ciao! Come posso aiutarti oggi?",
+    "come stai?": "Sto bene, grazie! E tu?",
+    "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene.",
+}
+
+# Cache per risposte recenti
+CACHE = LRUCache(maxsize=100)
+
+# Configurazione Hugging Face
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
+HTTP_CLIENT = httpx.AsyncClient(timeout=40)  # Timeout di 10 secondi
+FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
+
+@retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
+async def fetch_from_huggingface(prompt: str):
+    if not HUGGINGFACE_TOKEN:
+        raise ValueError("Errore: Token Hugging Face mancante.")
+    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+    payload = {
+        "inputs": prompt,
+        "parameters": {
+            "max_length": 15,
+            "temperature": 0.7,
+            "top_k": 40,
+            "top_p": 0.9,
+            "do_sample": True,
+        },
+    }
+    response = await HTTP_CLIENT.post(HUGGINGFACE_API_URL, headers=headers, json=payload)
+    response.raise_for_status()
+    return response.json()
+
+def clean_text(prompt: str, text: str) -> str:
+    text = re.sub(r"[\n\r*]", " ", text)
+    text = re.sub(r"\s+", " ", text)
+    escaped_prompt = re.escape(prompt.strip())
+    pattern = rf"^{escaped_prompt}\W*"
+    text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    return text
 
 @app.post("/generate")
-async def generate_text(prompt: str):
-    """
-    Genera testo utilizzando il modello locale.
-    """
-    global model, tokenizer
-    if not model or not tokenizer:
-        raise HTTPException(status_code=500, detail="Il modello non è stato caricato correttamente.")
-    
-    if not prompt.strip():
-        raise HTTPException(status_code=400, detail="Il prompt non può essere vuoto.")
+async def generate_text(request: PromptRequest):
+    prompt = request.prompt.strip()
+    print(f"Ricevuto prompt: '{prompt}'")
+    if prompt.lower() in PREDEFINED_RESPONSES:
+        return {"response": PREDEFINED_RESPONSES[prompt.lower()]}
 
-    # Pulizia del prompt
-    prompt = prompt.strip()
-    
+    if prompt.lower() in CACHE:
+        return {"response": CACHE[prompt.lower()]}
+
     try:
-        # Tokenizzazione
-        inputs = tokenizer(prompt, return_tensors="pt")
-
-        # Generazione
-        outputs = model.generate(
-            inputs["input_ids"],
-            max_length=50,
-            temperature=0.7,
-            top_k=40,
-            top_p=0.9,
-            do_sample=True,
-            pad_token_id=tokenizer.eos_token_id
-        )
-
-        # Decodifica e pulizia della risposta
-        response = tokenizer.decode(outputs[0], skip_special_tokens=True)
-        response = clean_response(prompt, response)
-
-        return {"response": response}
-
+        result = await fetch_from_huggingface(prompt)
+        if isinstance(result, list) and len(result) > 0:
+            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
+            CACHE[prompt.lower()] = generated_text
+            return {"response": generated_text}
+        return {"response": FALLBACK_RESPONSE}
+    except RetryError:
+        return {"response": FALLBACK_RESPONSE}
     except Exception as e:
-        print(f"Errore durante la generazione del testo: {e}")
-        raise HTTPException(status_code=500, detail="Errore durante la generazione del testo.")
+        print(f"Errore: {e}")
+        return {"response": FALLBACK_RESPONSE}
 
-def clean_response(prompt: str, response: str) -> str:
-    """
-    Pulisce la risposta generata rimuovendo il prompt e caratteri indesiderati.
-    """
-    # Rimuove il prompt dalla risposta
-    escaped_prompt = re.escape(prompt.strip())
-    pattern = rf"^{escaped_prompt}\W*"  # Cerca il prompt all'inizio della risposta
-    response = re.sub(pattern, "", response, flags=re.IGNORECASE).strip()
+@app.on_event("startup")
+async def warm_up_model():
+    try:
+        await fetch_from_huggingface("Ciao")
+        print("Modello riscaldato correttamente.")
+    except Exception as e:
+        print(f"Errore durante il warm-up: {e}")
 
-    # Rimuove caratteri indesiderati come \n o *
-    response = " ".join(response.splitlines()).replace("*", "").strip()
-    return response
+@app.on_event("shutdown")
+async def shutdown_event():
+    await HTTP_CLIENT.aclose()
+
+if __name__ == "__main__":
+    port = int(os.getenv("PORT", 8080))
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=port)
