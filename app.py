@@ -25,7 +25,10 @@ HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
 # Configurazione client HTTP
-HTTP_CLIENT = httpx.AsyncClient(timeout=10)
+HTTP_CLIENT = httpx.AsyncClient(timeout=30)  # Timeout aumentato a 30 secondi
+
+# Risposta di fallback generica
+FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
 def clean_text(prompt: str, text: str) -> str:
     """
@@ -55,9 +58,9 @@ async def fetch_from_huggingface(prompt: str):
     payload = {
         "inputs": prompt,
         "parameters": {
-            "max_length": 15,
+            "max_length": 5,
             "temperature": 0.7,
-            "top_k": 40,
+            "top_k": 20,
             "top_p": 0.9,
             "do_sample": True,
         },
@@ -95,14 +98,15 @@ async def generate_text(request: PromptRequest):
             CACHE[prompt.lower()] = generated_text  # Salvataggio nella cache
             return generated_text
 
-        return "Errore nel generare la risposta dal modello esterno."
+        return FALLBACK_RESPONSE
     
     except RetryError:
-        return "Il server è temporaneamente occupato. Riprova più tardi."
+        print("Numero massimo di tentativi superato.")
+        return FALLBACK_RESPONSE
 
     except Exception as e:
         print(f"Errore: {e}")
-        return "Errore nel comunicare con il server. Riprova più tardi."
+        return FALLBACK_RESPONSE
 
 @app.on_event("shutdown")
 async def shutdown_event():
