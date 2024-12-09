@@ -5,6 +5,7 @@ from pydantic import BaseModel
 import re
 import asyncio
 import httpx  # Usato per richieste asincrone
+import time  # Per i ritardi tra i tentativi
 
 app = FastAPI()
 
@@ -82,22 +83,36 @@ async def generate_text(request: PromptRequest):
         },
     }
 
-    try:
-        # Invia la richiesta asincrona
-        async with httpx.AsyncClient() as client:
-            response = await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-            response.raise_for_status()
-            result = response.json()
+    retry_attempts = 3  # Numero di tentativi in caso di errore
+    for attempt in range(retry_attempts):
+        try:
+            # Invia la richiesta asincrona
+            async with httpx.AsyncClient() as client:
+                response = await client.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+                response.raise_for_status()
+                result = response.json()
 
-            # 3. Estrarre e pulire il testo generato
-            if isinstance(result, list) and len(result) > 0:
-                generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-                return generated_text
+                # 3. Estrarre e pulire il testo generato
+                if isinstance(result, list) and len(result) > 0:
+                    generated_text = clean_text(prompt, result[0].get("generated_text", ""))
+                    return generated_text
 
-        return "Errore nel generare la risposta dal modello esterno."
-    except httpx.RequestError as e:
-        print(f"Errore di richiesta al modello: {e}")
-        return "Il server è occupato o lento. Riprova più tardi."
+            return "Errore nel generare la risposta dal modello esterno."
+
+        except httpx.HTTPStatusError as e:
+            if e.response.status_code == 503:
+                # Gestione dell'errore 503, tentativo di ritentare dopo una breve pausa
+                print(f"Errore 503 ricevuto. Tentativo {attempt + 1} di {retry_attempts}.")
+                time.sleep(5)  # Aspetta 5 secondi prima di ritentare
+            else:
+                print(f"Errore di stato HTTP: {e.response.status_code}")
+                return f"Errore nel comunicare con il server di Hugging Face: {e.response.status_code}"
+        except httpx.RequestError as e:
+            print(f"Errore di richiesta al modello: {e}")
+            return "Il server è occupato o lento. Riprova più tardi."
+
+    # Se tutti i tentativi falliscono, restituisci un errore
+    return "Errore nel generare la risposta dal modello esterno dopo diversi tentativi."
 
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
