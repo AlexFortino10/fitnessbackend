@@ -32,7 +32,7 @@ async def fetch_from_huggingface(prompt: str):
         "inputs": prompt,
         "parameters": {
             "max_length": 50,  # Aumento la lunghezza massima
-            "temperature": 0.7,
+            "temperature": 0.9,
             "top_k": 40,
             "top_p": 0.9,
             "do_sample": True,
