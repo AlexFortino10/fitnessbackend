@@ -2,7 +2,7 @@ import os
 import requests
 from fastapi import FastAPI
 from pydantic import BaseModel
-import time
+import re
 
 app = FastAPI()
 
@@ -16,22 +16,39 @@ PREDEFINED_RESPONSES = {
     "allenamento": "Inizia con 10 minuti di stretching per scaldarti bene.",
 }
 
-# Cache per risposte recenti
-CACHE = {}
-
 # Configurazione API Hugging Face
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
 def clean_text(prompt: str, response: str) -> str:
     """
-    Rimuove caratteri indesiderati e verifica che la risposta non includa il prompt.
+    Rimuove il prompt e qualsiasi sua variante dalla risposta.
     """
     response = " ".join(response.splitlines()).strip()  # Rimuove caratteri indesiderati
-    if response.lower().startswith(prompt.lower()):
-        # Rimuove il prompt dalla risposta se viene ripetuto
-        response = response[len(prompt):].strip()
-    return response
+
+    # Creare un pattern robusto per individuare il prompt
+    escaped_prompt = re.escape(prompt.strip())
+    pattern = rf"^{escaped_prompt}\W*"  # Cerca il prompt all'inizio della risposta con spazi o punteggiatura
+
+    # Rimuove il prompt dalla risposta
+    cleaned_response = re.sub(pattern, "", response, flags=re.IGNORECASE).strip()
+
+    return cleaned_response
+
+@app.on_event("startup")
+async def on_startup():
+    """
+    Pre-riscalda il modello per ridurre i tempi di risposta iniziali.
+    """
+    if HUGGINGFACE_TOKEN:
+        headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
+        payload = {"inputs": "ciao", "parameters": {"max_length": 10}}
+        try:
+            print("Pre-riscaldamento del modello...")
+            requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
+            print("Modello pre-riscaldato con successo!")
+        except Exception as e:
+            print(f"Errore durante il pre-riscaldamento: {e}")
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -46,12 +63,7 @@ async def generate_text(request: PromptRequest):
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
         return PREDEFINED_RESPONSES[prompt]
 
-    # 2. Controllo nella cache
-    if prompt in CACHE:
-        print(f"Risposta trovata nella cache per il prompt: '{prompt}'")
-        return CACHE[prompt]
-
-    # 3. Richiesta al modello Hugging Face
+    # 2. Richiesta al modello Hugging Face
     if not HUGGINGFACE_TOKEN:
         return "Errore: Token Hugging Face mancante."
 
@@ -73,10 +85,9 @@ async def generate_text(request: PromptRequest):
         response.raise_for_status()
         result = response.json()
 
-        # 4. Estrarre e pulire il testo generato
+        # 3. Estrarre e pulire il testo generato
         if isinstance(result, list) and len(result) > 0:
             generated_text = clean_text(prompt, result[0].get("generated_text", ""))
-            CACHE[prompt] = generated_text  # Salvataggio nella cache
             return generated_text
 
         return "Errore nel generare la risposta dal modello esterno."
