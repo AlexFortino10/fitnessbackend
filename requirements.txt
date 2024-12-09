@@ -1,6 +1,7 @@
 fastapi
 pydantic
 torch
+httpx
 transformers
 uvicorn[standard]
 accelerate>=0.26.0
