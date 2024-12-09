@@ -89,7 +89,7 @@ async def generate_text(request: PromptRequest):
         "inputs": prompt,
         "parameters": {
             "max_length": 15,
-            "temperature": 0.1,
+            "temperature": 0.7,
             "top_k": 40,
             "top_p": 0.9,
             "do_sample": True,
