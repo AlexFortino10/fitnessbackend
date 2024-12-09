@@ -27,14 +27,20 @@ HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-
 # Configurazione client HTTP
 HTTP_CLIENT = httpx.AsyncClient(timeout=10)
 
-def clean_text(text: str) -> str:
+def clean_text(prompt: str, text: str) -> str:
     """
-    Rimuove caratteri indesiderati e spazi in eccesso.
+    Rimuove caratteri indesiderati e il prompt dalla risposta.
     """
-    # Rimuove linee vuote, spazi multipli e caratteri non necessari
-    cleaned = re.sub(r"[\n\r*]", " ", text)  # Sostituisce newline e asterischi con uno spazio
-    cleaned = re.sub(r"\s+", " ", cleaned)  # Sostituisce spazi multipli con uno solo
-    return cleaned.strip()  # Rimuove spazi iniziali e finali
+    # Rimuove caratteri indesiderati
+    text = re.sub(r"[\n\r*]", " ", text)  # Rimuove newline e asterischi
+    text = re.sub(r"\s+", " ", text)  # Sostituisce spazi multipli con uno solo
+
+    # Rimuove il prompt dalla risposta
+    escaped_prompt = re.escape(prompt.strip())
+    pattern = rf"^{escaped_prompt}\W*"  # Cerca il prompt all'inizio della risposta
+    text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+
+    return text.strip()  # Rimuove eventuali spazi residui
 
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(5))
 async def fetch_from_huggingface(prompt: str):
@@ -66,18 +72,18 @@ async def generate_text(request: PromptRequest):
     """
     Gestisce il prompt e restituisce una risposta generata o predefinita.
     """
-    prompt = request.prompt.strip().lower()
+    prompt = request.prompt.strip()
     print(f"Ricevuto prompt: '{prompt}'")
 
     # 1. Controllo risposte predefinite
-    if prompt in PREDEFINED_RESPONSES:
+    if prompt.lower() in PREDEFINED_RESPONSES:
         print(f"Risposta predefinita trovata per il prompt: '{prompt}'")
-        return clean_text(PREDEFINED_RESPONSES[prompt])
+        return clean_text(prompt, PREDEFINED_RESPONSES[prompt])
 
     # 2. Controllo nella cache
-    if prompt in CACHE:
+    if prompt.lower() in CACHE:
         print(f"Risposta trovata nella cache per il prompt: '{prompt}'")
-        return clean_text(CACHE[prompt])
+        return clean_text(prompt, CACHE[prompt])
 
     try:
         # 3. Chiamata asincrona al modello Hugging Face
@@ -85,8 +91,8 @@ async def generate_text(request: PromptRequest):
         result = await fetch_from_huggingface(prompt)
 
         if isinstance(result, list) and len(result) > 0:
-            generated_text = clean_text(result[0].get("generated_text", ""))
-            CACHE[prompt] = generated_text  # Salvataggio nella cache
+            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
+            CACHE[prompt.lower()] = generated_text  # Salvataggio nella cache
             return generated_text
 
         return "Errore nel generare la risposta dal modello esterno."
