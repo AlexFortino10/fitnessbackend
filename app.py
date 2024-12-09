@@ -23,44 +23,15 @@ CACHE = {}
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 HUGGINGFACE_API_URL = "https://api-inference.huggingface.co/models/google/gemma-2-2b-it"
 
-def clean_text(text: str) -> str:
+def clean_text(prompt: str, response: str) -> str:
     """
-    Rimuove caratteri indesiderati e formatta il testo.
+    Rimuove caratteri indesiderati e verifica che la risposta non includa il prompt.
     """
-    return " ".join(text.splitlines()).strip()
-
-def preload_cache():
-    """
-    Pre-carica la cache per prompt comuni e pre-riscalda il modello.
-    """
-    print("Pre-caricamento della cache e pre-riscaldamento del modello...")
-    headers = {"Authorization": f"Bearer {HUGGINGFACE_TOKEN}"}
-    common_prompts = ["ciao", "come stai?", "allenamento"]
-
-    for prompt in common_prompts:
-        payload = {"inputs": prompt, "parameters": {"max_length": 50}}
-        try:
-            # Richiesta di pre-riscaldamento
-            response = requests.post(HUGGINGFACE_API_URL, headers=headers, json=payload, timeout=15)
-            response.raise_for_status()
-            result = response.json()
-
-            # Estrarre e salvare nella cache
-            if isinstance(result, list) and len(result) > 0:
-                CACHE[prompt] = clean_text(result[0].get("generated_text", ""))
-                print(f"Risposta pre-caricata per '{prompt}': {CACHE[prompt]}")
-            else:
-                CACHE[prompt] = "Risposta non disponibile."
-        except Exception as e:
-            CACHE[prompt] = f"Errore durante il pre-riscaldamento: {e}"
-            print(f"Errore durante il pre-caricamento per '{prompt}': {e}")
-
-@app.on_event("startup")
-async def on_startup():
-    """
-    Funzione di avvio per pre-caricare la cache e pre-riscaldare il modello.
-    """
-    preload_cache()
+    response = " ".join(response.splitlines()).strip()  # Rimuove caratteri indesiderati
+    if response.lower().startswith(prompt.lower()):
+        # Rimuove il prompt dalla risposta se viene ripetuto
+        response = response[len(prompt):].strip()
+    return response
 
 @app.post("/generate")
 async def generate_text(request: PromptRequest):
@@ -102,9 +73,9 @@ async def generate_text(request: PromptRequest):
         response.raise_for_status()
         result = response.json()
 
-        # 4. Estrarre e salvare nella cache
+        # 4. Estrarre e pulire il testo generato
         if isinstance(result, list) and len(result) > 0:
-            generated_text = clean_text(result[0].get("generated_text", ""))
+            generated_text = clean_text(prompt, result[0].get("generated_text", ""))
             CACHE[prompt] = generated_text  # Salvataggio nella cache
             return generated_text
 
