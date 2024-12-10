@@ -3,6 +3,7 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 from huggingface_hub import InferenceClient
 from tenacity import retry, wait_fixed, stop_after_attempt, RetryError
+import re
 
 app = FastAPI()
 
@@ -24,6 +25,16 @@ HUGGINGFACE_MODEL = "meta-llama/Meta-Llama-3-8B-Instruct"
 HUGGINGFACE_CLIENT = InferenceClient(api_key=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
+# Funzione per pulire il testo generato
+def clean_text(prompt: str, text: str) -> str:
+    # Rimuove newline, caratteri speciali e spazi multipli
+    text = re.sub(r"[\n\r*#\\]", " ", text)  # Rimuove newline e caratteri speciali
+    text = re.sub(r"\s+", " ", text)  # Sostituisce spazi multipli con uno singolo
+    escaped_prompt = re.escape(prompt.strip())  # Escape del prompt per evitare conflitti
+    pattern = rf"^{escaped_prompt}\W*"  # Rimuove il prompt iniziale (case insensitive)
+    text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
+    return text
+
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
 async def fetch_from_huggingface(prompt: str):
     try:
@@ -39,7 +50,8 @@ async def fetch_from_huggingface(prompt: str):
         
         # Recupero del testo generato
         if response.choices and len(response.choices) > 0:
-            return response.choices[0].message["content"].strip()
+            raw_text = response.choices[0].message["content"].strip()
+            return clean_text(prompt, raw_text)  # Pulisce il testo generato
         else:
             return FALLBACK_RESPONSE
     except Exception as e:
@@ -59,7 +71,7 @@ async def generate_text(request: PromptRequest):
         # 2. Chiamata al modello
         print("Invio richiesta a Hugging Face...")
         generated_text = await fetch_from_huggingface(prompt)
-        return generated_text  # Restituisce il testo generato
+        return generated_text  # Restituisce il testo pulito
     except RetryError:
         print("Numero massimo di tentativi superato durante il recupero del modello.")
         return FALLBACK_RESPONSE
