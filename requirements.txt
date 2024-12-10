@@ -3,6 +3,7 @@ pydantic
 torch
 httpx
 cachetools
+huggingface_hub
 transformers
 tenacity
 uvicorn[standard]
