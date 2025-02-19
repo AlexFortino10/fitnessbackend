@@ -18,12 +18,8 @@ PREDEFINED_RESPONSES = {
 }
 
 # Configurazione Hugging Face
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
-if not HUGGINGFACE_TOKEN:
-    raise ValueError("Errore: Token Hugging Face mancante.")
-
-# Modello DeepSeek
-HUGGINGFACE_MODEL = "deepseek-ai/deepseek-llm-67b-chat"
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Facoltativo per GPT-2
+HUGGINGFACE_MODEL = "gpt2"
 HUGGINGFACE_CLIENT = InferenceClient(model=HUGGINGFACE_MODEL, token=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
@@ -41,7 +37,7 @@ async def fetch_from_huggingface(prompt: str):
     try:
         response = HUGGINGFACE_CLIENT.text_generation(
             prompt,
-            max_new_tokens=500,
+            max_new_tokens=100,  # GPT-2 ha un limite inferiore rispetto ai modelli più grandi
             temperature=0.7,
             top_p=0.9
         )
