@@ -39,7 +39,7 @@ def clean_text(prompt: str, text: str) -> str:
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
 async def fetch_from_huggingface(prompt: str):
     try:
-        response = HUGGINGFACE_CLIENT.chat(
+        response = HUGGINGFACE_CLIENT.text_generation(
             prompt,
             max_new_tokens=500,
             temperature=0.7,
