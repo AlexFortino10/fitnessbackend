@@ -18,8 +18,8 @@ PREDEFINED_RESPONSES = {
 }
 
 # Configurazione Hugging Face
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Serve per accedere a Llama-3
-HUGGINGFACE_MODEL = "meta-llama/Meta-Llama-3-2-1B"
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Token API Hugging Face
+HUGGINGFACE_MODEL = "meta-llama/Llama-3.2-1B"  # Nome corretto del modello
 HUGGINGFACE_CLIENT = InferenceClient(model=HUGGINGFACE_MODEL, token=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
@@ -37,7 +37,7 @@ async def fetch_from_huggingface(prompt: str):
     try:
         response = HUGGINGFACE_CLIENT.text_generation(
             prompt,
-            max_new_tokens=200,  # Llama-3.2-1B può generare risposte più lunghe
+            max_new_tokens=200,  # Numero massimo di token nella risposta
             temperature=0.7,
             top_p=0.9
         )
