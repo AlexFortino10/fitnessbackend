@@ -24,7 +24,7 @@ if not HUGGINGFACE_TOKEN:
 
 # Modello DeepSeek
 HUGGINGFACE_MODEL = "deepseek-ai/deepseek-llm-67b-chat"
-HUGGINGFACE_CLIENT = InferenceClient(api_key=HUGGINGFACE_TOKEN)
+HUGGINGFACE_CLIENT = InferenceClient(model=HUGGINGFACE_MODEL, token=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
 # Funzione per pulire il testo generato
@@ -39,21 +39,13 @@ def clean_text(prompt: str, text: str) -> str:
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
 async def fetch_from_huggingface(prompt: str):
     try:
-        messages = [{"role": "user", "content": prompt}]
-        
-        response = HUGGINGFACE_CLIENT.chat_completions.create(
-            model=HUGGINGFACE_MODEL,
-            messages=messages,
-            max_tokens=500,
+        response = HUGGINGFACE_CLIENT.chat(
+            prompt,
+            max_new_tokens=500,
             temperature=0.7,
             top_p=0.9
         )
-        
-        if response.choices and len(response.choices) > 0:
-            raw_text = response.choices[0].message["content"].strip()
-            return clean_text(prompt, raw_text)
-        else:
-            return FALLBACK_RESPONSE
+        return clean_text(prompt, response) if response else FALLBACK_RESPONSE
     except Exception as e:
         print(f"Errore durante la chiamata a Hugging Face: {e}")
         raise
