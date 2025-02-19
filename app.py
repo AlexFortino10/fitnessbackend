@@ -44,8 +44,7 @@ async def fetch_from_huggingface(prompt: str):
             messages=messages,
             max_tokens=500,
             temperature=0.7,
-            top_p=0.9,
-            top_k=50
+            top_p=0.9
         )
         
         if response.choices and len(response.choices) > 0:
