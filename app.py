@@ -18,16 +18,19 @@ PREDEFINED_RESPONSES = {
 }
 
 # Configurazione Hugging Face
-HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")  # Token API Hugging Face
-HUGGINGFACE_MODEL = "meta-llama/Llama-3.2-1B"  # Nome corretto del modello
-HUGGINGFACE_CLIENT = InferenceClient(model=HUGGINGFACE_MODEL, token=HUGGINGFACE_TOKEN)
+HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
+if not HUGGINGFACE_TOKEN:
+    raise ValueError("Errore: Token Hugging Face mancante.")
+HUGGINGFACE_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+HUGGINGFACE_CLIENT = InferenceClient(api_key=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
 # Funzione per pulire il testo generato
 def clean_text(prompt: str, text: str) -> str:
+    # Rimuove newline, caratteri speciali e spazi multipli
     text = re.sub(r"[\n\r*#\\]", " ", text)  # Rimuove newline e caratteri speciali
     text = re.sub(r"\s+", " ", text)  # Sostituisce spazi multipli con uno singolo
-    escaped_prompt = re.escape(prompt.strip())  
+    escaped_prompt = re.escape(prompt.strip())  # Escape del prompt per evitare conflitti
     pattern = rf"^{escaped_prompt}\W*"  # Rimuove il prompt iniziale (case insensitive)
     text = re.sub(pattern, "", text, flags=re.IGNORECASE).strip()
     return text
@@ -35,13 +38,22 @@ def clean_text(prompt: str, text: str) -> str:
 @retry(wait=wait_fixed(2), stop=stop_after_attempt(3))
 async def fetch_from_huggingface(prompt: str):
     try:
-        response = HUGGINGFACE_CLIENT.text_generation(
-            prompt,
-            max_new_tokens=200,  # Numero massimo di token nella risposta
-            temperature=0.5,
-            top_p=0.5
+        # Creazione del messaggio di input
+        messages = [{"role": "user", "content": prompt}]
+        
+        # Richiesta al modello
+        response = HUGGINGFACE_CLIENT.chat.completions.create(
+            model=HUGGINGFACE_MODEL,
+            messages=messages,
+            max_tokens=500
         )
-        return clean_text(prompt, response) if response else FALLBACK_RESPONSE
+        
+        # Recupero del testo generato
+        if response.choices and len(response.choices) > 0:
+            raw_text = response.choices[0].message["content"].strip()
+            return clean_text(prompt, raw_text)  # Pulisce il testo generato
+        else:
+            return FALLBACK_RESPONSE
     except Exception as e:
         print(f"Errore durante la chiamata a Hugging Face: {e}")
         raise
@@ -53,12 +65,13 @@ async def generate_text(request: PromptRequest):
 
     # 1. Controllo risposte predefinite
     if prompt.lower() in PREDEFINED_RESPONSES:
-        return PREDEFINED_RESPONSES[prompt.lower()]
+        return PREDEFINED_RESPONSES[prompt.lower()]  # Restituisce solo il testo senza "response"
 
     try:
+        # 2. Chiamata al modello
         print("Invio richiesta a Hugging Face...")
         generated_text = await fetch_from_huggingface(prompt)
-        return generated_text
+        return generated_text  # Restituisce il testo pulito
     except RetryError:
         print("Numero massimo di tentativi superato durante il recupero del modello.")
         return FALLBACK_RESPONSE
@@ -79,4 +92,4 @@ async def warm_up_model():
 if __name__ == "__main__":
     port = int(os.getenv("PORT", 8080))
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port)... ma vorrei usare un modello LLM migliore di Lama, cosa mi consiglio. ovviamente gratuito.
