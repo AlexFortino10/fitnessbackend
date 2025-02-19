@@ -38,8 +38,8 @@ async def fetch_from_huggingface(prompt: str):
         response = HUGGINGFACE_CLIENT.text_generation(
             prompt,
             max_new_tokens=200,  # Numero massimo di token nella risposta
-            temperature=0.7,
-            top_p=0.9
+            temperature=0.2,
+            top_p=0.2
         )
         return clean_text(prompt, response) if response else FALLBACK_RESPONSE
     except Exception as e:
