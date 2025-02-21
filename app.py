@@ -21,7 +21,9 @@ PREDEFINED_RESPONSES = {
 HUGGINGFACE_TOKEN = os.getenv("HUGGINGFACE_TOKEN")
 if not HUGGINGFACE_TOKEN:
     raise ValueError("Errore: Token Hugging Face mancante.")
-HUGGINGFACE_MODEL = "meta-llama/Llama-3.1-8B-Instruct"
+
+# **Usiamo il modello gratuito**
+HUGGINGFACE_MODEL = "meta-llama/Llama-3-8B-Instruct"
 HUGGINGFACE_CLIENT = InferenceClient(api_key=HUGGINGFACE_TOKEN)
 FALLBACK_RESPONSE = "Non riesco a rispondere in questo momento, ma possiamo riprovare!"
 
